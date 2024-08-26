@@ -1,0 +1,254 @@
+---
+title: "MCMC run"
+author: "Eduardo de Freitas Costa"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+output:
+  html_document:
+    df_print: paged
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Script header
+
+File: `Descriptive.rmd`
+
+Client: 
+WBVR project: 
+Author: Eduardo de Freitas Costa, Wageningen Bioveterinary Research
+
+Start date: \
+R version: `r getRversion()`
+
+Dependencies:
+
+-   Downstream
+
+    -   `Data\hiuwalter_model_insilico.txt`
+
+-   Upstream
+
+    -   `None`
+
+-   Input
+
+        -   `None`.
+
+-   Output
+
+    -   `None`
+
+Peer reviewer(s)
+
+------------------------------------------------------------------------
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+# Load libraries
+```{r, include=FALSE}
+
+#Packages to be used
+packages<-c("here","tidyverse","ggplot2","knitr","rmarkdown","runjags")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+
+```
+
+# Import the data
+```{r}
+
+```
+
+# Run the MCMC model
+
+```{r}
+
+if (file.exists(here("Data","huiwalter_model.txt"))){
+results <- run.jags(here("Data","huiwalter_model.txt"),
+                    burnin = 1500,
+                    sample = 10000,
+                    n.chains = 2,
+                    thin = 2)
+  
+} else{
+template_huiwalter(simdata,outfile=here("Data","huiwalter_model.txt"), covariance=FALSE,
+                   se_priors = "dbeta(1,1)",
+                    sp_priors = "dbeta(1,1)")
+
+results <- run.jags(here("Data","huiwalter_model.txt"),
+                    burnin = 1500,
+                    sample = 10000,
+                    n.chains = 2,
+                    thin = 2)
+  
+  
+}
+
+```
+
+
+# Model results and diagnostic
+```{r}
+## Examine trace plots to assess model convergence
+plot(results, vars = c("se", "sp", "prev"))
+
+## Model gives results for Se, Sp and the PPP values
+## Estimated sample size (ESS) and potential scale reduction factor (PSRF) of the Gelman Rubin statistic included in the output
+results
+
+```
+
+# PCR1 cut-off
+## Extract the PPP values and match these to PCR1 results
+```{r}
+
+## PPP values are calculated in JAGS, so need to be extracted from 10,000 (thinned) iterations:
+ppp_values <- combine.mcmc(res1, return.samples=10000, vars="ppp")
+
+## Mean PPP values (n = 28) based on 1000 iterations
+(mean_ppp <- apply(ppp_values, 2,  mean))
+
+## Map the 28 mean PPVs to all the observations (n = 233) in the df1 dataset
+test_data %>%
+  mutate(	testcombo = interaction(MAT, WB), 
+  			colname = str_c("ppp[", as.numeric(testcombo), ",", as.numeric(Population), "]"), 
+  			colindex = match(colname, names(mean_ppp)), 
+  			mean_ppp = mean_ppp[colindex]
+  		) ->
+  test_data
+
+```
+
+## Derive PCR1 Se and Sp for each possible PP value from these 1000 iterations:
+```{r}
+possible_pp <- tibble(LT = c(0, sort(unique(test_data$ELISA_PP)))) %>%
+  mutate(UT = lead(LT, default=max(test_data$ELISA_PP)+1), MT = (LT+UT)/2, IT = 1:n()) 
+
+cutoff_fun <- function(iter){
+  test_data %>%
+    select(ELISA_PP, colindex) %>%
+    mutate(PPP = ppp_values[iter,colindex]) %>%
+    expand_grid(possible_pp) %>%
+    group_by(IT, LT, MT, UT) %>%
+    summarise(	Iteration = iter, 
+    			SeNum = sum(PPP[ELISA_PP >= MT]), SeDen = sum(PPP),
+    			SpNum = sum(1-PPP[ELISA_PP < MT]), SpDen = sum(1-PPP), 
+    			.groups='drop')
+}
+
+cutoff_evaluation <- pblapply(seq_len(coda::niter(ppp_values)), cutoff_fun) %>%
+	bind_rows() %>%
+	mutate(
+		Sensitivity = SeNum / SeDen,
+		Specificity = SpNum / SpDen,
+		SeCI = rbeta(n(), SeNum+1, SeDen-SeNum+1),
+		SpCI = rbeta(n(), SpNum+1, SpDen-SpNum+1)
+	 )
+
+
+## Create a plot of sensitivity, specificity and sum vs PP value:
+	 
+getci <- function(x, upper=TRUE) coda::HPDinterval(coda::as.mcmc(x))[,as.numeric(upper)+1]
+plotdata <- cutoff_evaluation %>%
+	 group_by(IT, LT, MT, UT) %>%
+	 summarise(
+	 	Se_Mean = mean(SeNum / SeDen),
+	 	Se_LCI = getci(SeCI, FALSE),
+	 	Se_UCI = getci(SeCI, TRUE),
+	 	Sp_Mean = mean(SpNum / SpDen),
+	 	Sp_LCI = getci(SpCI, FALSE),
+	 	Sp_UCI = getci(SpCI, TRUE),
+	 	.groups = "drop"
+	 ) %>%
+	 mutate(
+	 	Sum_Mean = Se_Mean + Sp_Mean,
+	 	Sum_LCI = Se_LCI + Sp_LCI,
+	 	Sum_UCI = Se_UCI + Sp_UCI
+	 ) %>%
+	 pivot_longer(
+	 	cols = Se_Mean:Sum_UCI,
+	 	names_to = c("Parameter", "Estimate"),
+	 	names_pattern = "(.*)_(.*)",
+	 	values_to = "Value"
+	 ) %>%
+	 mutate(Value = Value * 100) %>%
+	 pivot_wider(
+	 	names_from = Estimate, values_from = Value
+	 ) %>%
+	 pivot_longer(
+	 	cols = LT:UT,
+	 	names_to = "Boundary",
+	 	values_to = "PP"
+	 ) %>%
+	 mutate(Parameter = factor(Parameter, levels=c("Sum", "Se", "Sp"), labels = c("Sensitivity + Specificity", "Sensitivity", "Specificity")))
+
+optimal <- plotdata %>%
+	filter(Parameter == "Sensitivity + Specificity", Boundary == "MT") %>%
+	arrange(desc(Mean)) %>%
+	slice(1) %>%
+	pull(PP)
+optimal
+round(optimal, 1)
+# Beware floating point arithmetic!
+print(optimal, digits=20)
+(optimal <- round(optimal + 1e-6, 1))
+
+ggplot(plotdata) +
+	aes(x = PP, y = Mean, ymin = LCI, ymax = UCI) +
+	geom_ribbon(alpha=0.25) +
+	geom_line() +
+	geom_vline(xintercept = 20, lty="dotted") +
+	geom_vline(xintercept = optimal, lty="dashed") +
+	facet_wrap( ~ Parameter, scales="free_y", ncol=1) +
+	xlab("PP value") +
+	ylab(NULL) +
+	scale_x_continuous(breaks = c(0, 20, optimal, seq(50,150,by=25)))
+
+
+## Create a ROC curve:
+roc_ci <- cutoff_evaluation %>%
+	mutate(Se = as.integer(round(SeCI*100)), Sp = as.integer(round(SpCI*100))) %>%
+	group_by(Sp) %>%
+	summarise(LCI = getci(Se, FALSE), UCI = getci(Se, TRUE), Se = mean(Se)) %>%
+	arrange(Se, 1-Sp)
+roc_mean <- cutoff_evaluation %>%
+	group_by(IT,LT,MT,UT) %>%
+	summarise(Se = mean(SeNum/SeDen)*100, Sp = mean(SpNum/SpDen)*100, .groups='drop')
+roc_opt <- plotdata %>%
+	filter(abs(round(PP + 1e-6, 1) - optimal) < 1e-6, Parameter %in% c("Sensitivity","Specificity")) %>%
+	select(Parameter, Mean) %>%
+	pivot_wider(names_from = Parameter, values_from = Mean)
+
+ggplot() + 
+	geom_ribbon(aes(x=100-Sp, y=Se, ymin=LCI, ymax=UCI), roc_ci, alpha = 0.25) +
+	geom_line(aes(x=100-Sp, y=Se), roc_mean) +
+	geom_point(aes(x=100-Specificity, y=Sensitivity), roc_opt, pch = 8, col="black") +
+	ylab('Sensitivity') + xlab('1 - Specificity') +
+	geom_abline(slope=1, intercept=0, lty='dashed') +
+	ylim(0,100)
+
+# Calculate AUC:
+integrate(approxfun(1-roc_mean$Sp/100, roc_mean$Se/100), 0, 1)
+
+```
+
+# PCR2 cut-off
+## Extract the PPP values and match these to PCR2 results
+```{r}
+
+```

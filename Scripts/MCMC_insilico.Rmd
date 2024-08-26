@@ -1,0 +1,182 @@
+---
+title: "MCMC example"
+author: "Eduardo de Freitas Costa"
+date: '`r format(Sys.Date(), "%Y-%m-%d")`'
+output:
+  html_document:
+    df_print: paged
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float: true
+editor_options:
+  chunk_output_type: console
+---
+
+# Script header
+
+File: `Descriptive.rmd`
+
+Client: 
+WBVR project: 
+Author: Eduardo de Freitas Costa, Wageningen Bioveterinary Research
+
+Start date: \
+R version: `r getRversion()`
+
+Dependencies:
+
+-   Downstream
+
+    -   `Data\hiuwalter_model_insilico.txt`
+
+-   Upstream
+
+    -   `None`
+
+-   Input
+
+        -   `None`.
+
+-   Output
+
+    -   `None`
+
+Peer reviewer(s)
+
+------------------------------------------------------------------------
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+
+# Load libraries
+```{r, include=FALSE}
+
+#Packages to be used
+packages<-c("here","tidyverse","ggplot2","knitr","rmarkdown","runjags")
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+
+```
+
+
+#Create an in-silico dataset
+
+Set up 4 populations and 3 tests:
+
+ + The populations have equal sample sizes ~100.
+ + The prevalences are 10%/5%/10%/60%, 
+
+```{r}
+N <- 400
+Populations <- 4
+prevalence <- c(0.1,0.05,0.1,0.6)
+Group <- sample(1:Populations, N, replace=TRUE)
+
+# We set the Se:
+##Se_culture:0.2
+##Se_PCR1:0.95
+##Se_PCR2:0.985
+se1 <- 0.2
+se2 <- 0.95
+se3 <- 0.985
+
+# We set the Sp:
+##Sp_culture:0.89
+##Sp_PCR1:0.92
+##Sp_PCR2:0.95
+sp1 <- 0.89
+sp2 <- 0.92
+sp3 <- 0.95
+
+
+# Ensure replicable data:
+set.seed(2020-02-18)
+# Simulate the true latent state (which is unobserved in real! life):
+  true <- rbinom(N, 1, prevalence[Group])
+  # Simulate test results for test 1:
+  test1 <- rbinom(N, 1, se1*true + (1-sp1)*(1-true))
+  # Simulate test results for test 2:
+  test2 <- rbinom(N, 1, se2*true + (1-sp2)*(1-true))
+  # Simulate test results for test 3:
+  test3 <- rbinom(N, 1, se3*true + (1-sp3)*(1-true))
+  
+simdata <- data.frame(Population=factor(Group), Test1=test1, Test2=test2, Test3=test3)
+
+
+```
+
+# Run the MCMC model
+
+Running the Bayesian MCMC simulation on a hui-walter template with 2 chains, 10000 samples, burnin=1500 and thin=2. 
+
+ + This model assumes `non-informative` priors.
+ + This model also assumes that the tests are independent from each other.
+ 
+```{r}
+
+
+if (file.exists(here("Data","huiwalter_model_insilico.txt"))){
+results <- run.jags(here("Data","huiwalter_model_insilico.txt"),
+                    burnin = 1500,
+                    sample = 10000,
+                    n.chains = 2,
+                    thin = 2)
+  
+} else{
+template_huiwalter(simdata,outfile=here("Data","huiwalter_model_insilico.txt"), covariance=FALSE,
+                   se_priors = "dbeta(1,1)",
+                    sp_priors = "dbeta(1,1)")
+
+results <- run.jags(here("Data","huiwalter_model_insilico.txt"),
+                    burnin = 1500,
+                    sample = 10000,
+                    n.chains = 2,
+                    thin = 2)
+  
+  
+}
+
+```
+
+# Model's result and diagnostic
+We can see that the theoretical values used to generate the `in-silico` dataset is contained within the 95% credible interval.
+
+```{r}
+summary(results)
+
+
+data1=cbind.data.frame(parameter=c("prev[1]",
+                                  "prev[2]",
+                                  "prev[3]",
+                                  "prev[4]",
+                                  "se[1]",
+                                  "se[2]",
+                                  "se[3]",
+                                  "sp[1]",
+                                  "sp[2]",
+                                  "sp[3]"),
+                      value=c(prevalence,se1,se2,se3,sp1,sp2,sp3))
+
+combine.mcmc(results)%>%
+  as_tibble()%>%
+  gather(key="parameter",value="value")%>%
+  ggplot(aes(x=parameter,y=value))+
+  geom_violin()+
+  geom_point(data=data1,aes(x=parameter,y=value))+
+  theme_minimal()
+
+plot(results, vars = c("se", "sp", "prev"))  
+
+```
+

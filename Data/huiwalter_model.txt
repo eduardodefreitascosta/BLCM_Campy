@@ -1,0 +1,193 @@
+## Auto-generated Hui-Walter model created by script version 0.1 on 2020-09-18
+
+model{
+
+	## Observation layer:
+
+	# Complete observations (N=233):
+	# Note: the PopulationsUsing variable allows some populations to be excluded easily
+	for(p in PopulationsUsing){
+		Tally_RRR[1:8,p] ~ dmulti(prob_RRR[1:8,p], N_RRR[p])
+	}
+	for(p in 1:Populations){
+		prob_RRR[1:8,p] <- se_prob[1:8,p] + sp_prob[1:8,p]
+	}
+	
+	## Observation probabilities:
+	for(p in 1:Populations){
+
+		## Probability of observing MAT- WB- ELISA- from a true positive::
+		se_prob[1,p] <- prev[p] * ((1-se[1])*(1-se[2])*(1-se[3]) +covse12 +covse13 +covse23)
+
+		## Probability of observing MAT- WB- ELISA- from a true negative::
+		sp_prob[1,p] <- (1-prev[p]) * (sp[1]*sp[2]*sp[3] +covsp12 +covsp13 +covsp23)
+
+		## Probability of observing MAT+ WB- ELISA- from a true positive::
+		se_prob[2,p] <- prev[p] * (se[1]*(1-se[2])*(1-se[3]) -covse12 -covse13 +covse23)
+
+		## Probability of observing MAT+ WB- ELISA- from a true negative::
+		sp_prob[2,p] <- (1-prev[p]) * ((1-sp[1])*sp[2]*sp[3] -covsp12 -covsp13 +covsp23)
+
+		## Probability of observing MAT- WB+ ELISA- from a true positive::
+		se_prob[3,p] <- prev[p] * ((1-se[1])*se[2]*(1-se[3]) -covse12 +covse13 -covse23)
+
+		## Probability of observing MAT- WB+ ELISA- from a true negative::
+		sp_prob[3,p] <- (1-prev[p]) * (sp[1]*(1-sp[2])*sp[3] -covsp12 +covsp13 -covsp23)
+
+		## Probability of observing MAT+ WB+ ELISA- from a true positive::
+		se_prob[4,p] <- prev[p] * (se[1]*se[2]*(1-se[3]) +covse12 -covse13 -covse23)
+
+		## Probability of observing MAT+ WB+ ELISA- from a true negative::
+		sp_prob[4,p] <- (1-prev[p]) * ((1-sp[1])*(1-sp[2])*sp[3] +covsp12 -covsp13 -covsp23)
+
+		## Probability of observing MAT- WB- ELISA+ from a true positive::
+		se_prob[5,p] <- prev[p] * ((1-se[1])*(1-se[2])*se[3] +covse12 -covse13 -covse23)
+
+		## Probability of observing MAT- WB- ELISA+ from a true negative::
+		sp_prob[5,p] <- (1-prev[p]) * (sp[1]*sp[2]*(1-sp[3]) +covsp12 -covsp13 -covsp23)
+
+		## Probability of observing MAT+ WB- ELISA+ from a true positive::
+		se_prob[6,p] <- prev[p] * (se[1]*(1-se[2])*se[3] -covse12 +covse13 -covse23)
+
+		## Probability of observing MAT+ WB- ELISA+ from a true negative::
+		sp_prob[6,p] <- (1-prev[p]) * ((1-sp[1])*sp[2]*(1-sp[3]) -covsp12 +covsp13 -covsp23)
+
+		## Probability of observing MAT- WB+ ELISA+ from a true positive::
+		se_prob[7,p] <- prev[p] * ((1-se[1])*se[2]*se[3] -covse12 -covse13 +covse23)
+
+		## Probability of observing MAT- WB+ ELISA+ from a true negative::
+		sp_prob[7,p] <- (1-prev[p]) * (sp[1]*(1-sp[2])*(1-sp[3]) -covsp12 -covsp13 +covsp23)
+
+		## Probability of observing MAT+ WB+ ELISA+ from a true positive::
+		se_prob[8,p] <- prev[p] * (se[1]*se[2]*se[3] +covse12 +covse13 +covse23)
+
+		## Probability of observing MAT+ WB+ ELISA+ from a true negative::
+		sp_prob[8,p] <- (1-prev[p]) * ((1-sp[1])*(1-sp[2])*(1-sp[3]) +covsp12 +covsp13 +covsp23)
+
+
+		#### CUSTOMISED CODE to calculate PPP values for ROC curve based on MAT and WB only:
+
+		## For MAT- WB-
+		se_ppp[1,p] <- prev[p] * (1-se[1])*(1-se[2])
+		sp_ppp[1,p] <- (1-prev[p]) * (sp[1])*(sp[2])
+
+		## For MAT+ WB-
+		se_ppp[2,p] <- prev[p] * (se[1])*(1-se[2])
+		sp_ppp[2,p] <- (1-prev[p]) * (1-sp[1])*(sp[2])
+
+		## For MAT- WB+
+		se_ppp[3,p] <- prev[p] * (1-se[1])*(se[2])
+		sp_ppp[3,p] <- (1-prev[p]) * (sp[1])*(1-sp[2])
+
+		## For MAT+ WB+
+		se_ppp[4,p] <- prev[p] * (se[1])*(se[2])
+		sp_ppp[4,p] <- (1-prev[p]) * (1-sp[1])*(1-sp[2])
+
+		for(t in 1:4){
+			# The probability of being positive given this combination of test results
+			# (simple application of Bayes theorem anagolous to PPV = TP / (TP + FP))
+			ppp[t,p] <- se_ppp[t,p] / (se_ppp[t,p] + sp_ppp[t,p])
+		}
+
+		## END CUSTOMISED CODE
+
+	}
+
+	## Priors:
+
+	## Prevalence in population CF:
+	prev[1] ~ dbeta(1,1)
+
+	## Prevalence in population CS:
+	prev[2] ~ dbeta(1,1)
+
+	## Prevalence in population CS-L:
+	prev[3] ~ dbeta(1,1)
+
+	## Prevalence in population CS-TR:
+	prev[4] ~ dbeta(1,1)
+
+	## Prevalence in population OF:
+	prev[5] ~ dbeta(1,1)
+
+	## Prevalence in population OF-TR:
+	prev[6] ~ dbeta(1,1)
+
+	## Prevalence in population OS:
+	prev[7] ~ dbeta(1,1)
+
+	## Sensitivity of MAT test:
+	se[1] ~ dbeta(1,1)T(1-sp[1], )
+
+	## Specificity of MAT test:
+	sp[1] ~ dbeta(1,1)
+
+	## Sensitivity of WB test:
+	se[2] ~ dbeta(1,1)T(1-sp[2], )
+
+	## Specificity of WB test:
+	sp[2] ~ dbeta(1,1)
+
+	## Sensitivity of ELISA test:
+	se[3] ~ dbeta(59.5, 0.66)
+
+	## Specificity of ELISA test:
+	sp[3] ~ dbeta(82.33, 6.48)
+
+	## Covariance in sensitivity between MAT and WB tests:
+	covse12 ~ dunif( (se[1]-1)*(1-se[2]) , min(se[1],se[2]) - se[1]*se[2] )
+
+	## Covariance in specificity between MAT and WB tests:
+	covsp12 ~ dunif( (sp[1]-1)*(1-sp[2]) , min(sp[1],sp[2]) - sp[1]*sp[2] )
+
+	## Covariance in sensitivity between MAT and ELISA tests:
+	covse13 ~ dunif( (se[1]-1)*(1-se[3]) , min(se[1],se[3]) - se[1]*se[3] )
+
+	## Covariance in specificity between MAT and ELISA tests:
+	covsp13 ~ dunif( (sp[1]-1)*(1-sp[3]) , min(sp[1],sp[3]) - sp[1]*sp[3] )
+
+	## Covariance in sensitivity between WB and ELISA tests:
+	covse23 ~ dunif( (se[2]-1)*(1-se[3]) , min(se[2],se[3]) - se[2]*se[3] )
+
+	## Covariance in specificity between WB and ELISA tests:
+	covsp23 ~ dunif( (sp[2]-1)*(1-sp[3]) , min(sp[2],sp[3]) - sp[2]*sp[3] )
+
+}
+
+#monitor# se, sp, prev, covse12, covsp12, covse13, covsp13, covse23, covsp23, ppp
+#data# PopulationsUsing
+
+## Initial values for 2 chains:
+
+inits{
+"se" <- c(0.5, 0.99, 0.5)
+"sp" <- c(0.99, 0.75, 0.99)
+"prev" <- c(0.05, 0.95, 0.05, 0.95, 0.05, 0.95, 0.05)
+"covse12" <- 0
+"covse13" <- 0
+"covse23" <- 0
+"covsp12" <- 0
+"covsp13" <- 0
+"covsp23" <- 0
+}
+
+inits{
+"se" <- c(0.99, 0.5, 0.99)
+"sp" <- c(0.75, 0.99, 0.75)
+"prev" <- c(0.95, 0.05, 0.95, 0.05, 0.95, 0.05, 0.95)
+"covse12" <- 0
+"covse13" <- 0
+"covse23" <- 0
+"covsp12" <- 0
+"covsp13" <- 0
+"covsp23" <- 0
+}
+
+## Data:
+
+data{
+"Populations" <- 7
+"N_RRR" <- c(30, 32, 95, 10, 30, 10, 26)
+"Tally_RRR" <- structure(c(29, 0, 0, 0, 1, 0, 0, 0, 28, 0, 0, 0, 0, 1, 0, 3, 75, 0, 2, 0, 7, 1, 0, 10, 2, 1, 0, 0, 4, 1, 0, 2, 24, 0, 0, 0, 1, 0, 0, 5, 1, 0, 0, 0, 1, 0, 0, 8, 12, 0, 0, 0, 0, 0, 1, 13), .Dim = c(8, 7))
+}
+
