@@ -57,10 +57,34 @@ model{
 		# Probability of observing Test1+ Test2+ Test3+ from a true negative:
 		sp_prob[8,p] <- (1-sp[1])*(1-sp[2])*(1-sp[3]) +covsp_1_2 +covsp_1_3 +covsp_2_3
 
-		# Ensure that the covariance terms do not result in an invalid probability:
-		for(c in 1:8){
-			AcceptProb[c,p] ~ dbern(ifelse(se_prob[c,p] >= 0 && se_prob[c,p] <= 1 && sp_prob[c,p] >= 0 && sp_prob[c,p], 1, 0))
+	
+		
+			#### CUSTOMISED CODE to calculate PPP values for ROC curve based on MAT and WB only:
+
+		## For MAT- WB-
+		se_ppp[1,p] <- prev[p] * (1-se[1])*(1-se[2])
+		sp_ppp[1,p] <- (1-prev[p]) * (sp[1])*(sp[2])
+
+		## For MAT+ WB-
+		se_ppp[2,p] <- prev[p] * (se[1])*(1-se[2])
+		sp_ppp[2,p] <- (1-prev[p]) * (1-sp[1])*(sp[2])
+
+		## For MAT- WB+
+		se_ppp[3,p] <- prev[p] * (1-se[1])*(se[2])
+		sp_ppp[3,p] <- (1-prev[p]) * (sp[1])*(1-sp[2])
+
+		## For MAT+ WB+
+		se_ppp[4,p] <- prev[p] * (se[1])*(se[2])
+		sp_ppp[4,p] <- (1-prev[p]) * (1-sp[1])*(1-sp[2])
+
+		for(t in 1:4){
+			# The probability of being positive given this combination of test results
+			# (simple application of Bayes theorem anagolous to PPV = TP / (TP + FP))
+			ppp[t,p] <- se_ppp[t,p] / (se_ppp[t,p] + sp_ppp[t,p])
 		}
+
+		## END CUSTOMISED CODE
+
 
 	}
 
@@ -144,7 +168,7 @@ model{
 
 }
 
-#monitor# se, sp, prev
+#monitor# se, sp, prev, ppp
 
 ## Inits:
 inits{
